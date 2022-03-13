@@ -11,5 +11,5 @@ do
 		mv file$a newfile$a
 	
 	fi
-	a = $[$a+1]           #don't forget change the loop variable
+	a = $a+1           #don't forget change the loop variable
 done
