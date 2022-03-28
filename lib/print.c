@@ -91,9 +91,9 @@ fmt++;
 	longFlag = 0;
 	negFlag = 0;
     width = 0;
-    int prec = 6;
-    int ladjust = 0;
-    char padc = ' ';	
+    prec = 6;
+    ladjust = 0;
+    padc = ' ';	
 	/* check for flag */
 	ladjust = 0;
 	padc = ' ';
@@ -106,9 +106,9 @@ fmt++;
 		fmt++;
 	}
 
-	witch = 0;
+	width = 0;
 	while (IsDigit(*fmt)) {
-		witch = witch * 10 + Ctod(*fmt);
+		width = width * 10 + Ctod(*fmt);
 		fmt++;
 	}
 	/* check for other prefixes */
