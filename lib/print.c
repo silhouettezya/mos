@@ -15,6 +15,18 @@
 #define		IsDigit(x)	( ((x) >= '0') && ((x) <= '9') )
 #define		Ctod(x)		( (x) - '0')
 
+#define     PrintC(c) \
+{length = PrintChar(buf, c, 0, ladjust); \
+        OUTPUT(arg, buf, length); }
+
+#define		PrintInt(x) \
+            { \
+                num = x; \
+                if (num < 0) num = -num, negFlag = 1; \
+                length = PrintNum(buf, num, 10, negFlag, width, ladjust, padc, 0); \
+                OUTPUT(arg, buf, length); \
+                negFlag = 0; \
+            }
 /* forward declaration */
 extern int PrintChar(char *, char, int, int);
 extern int PrintString(char *, char *, int, int);
