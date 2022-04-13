@@ -27,8 +27,12 @@ void mips_detect_memory()
 {
 	/* Step 1: Initialize basemem.
 	 * (When use real computer, CMOS tells us how many kilobytes there are). */
-
+	maxpa = 0x4000000;
+    basemem = 0x4000000;
+    extmem = 0;
 	// Step 2: Calculate corresponding npage value.
+	npage = basemem >> PGSHIFT;
+
 
 	printf("Physical memory: %dK available, ", (int)(maxpa / 1024));
 	printf("base = %dK, extended = %dK\n", (int)(basemem / 1024),
@@ -176,16 +180,24 @@ void page_init(void)
 {
 	/* Step 1: Initialize page_free_list. */
 	/* Hint: Use macro `LIST_INIT` defined in include/queue.h. */
-
+	LIST_INIT(&page_free_list);
 
 	/* Step 2: Align `freemem` up to multiple of BY2PG. */
-
+	freemem = ROUND(freemem, BY2PG);
 
 	/* Step 3: Mark all memory blow `freemem` as used(set `pp_ref`
 	 * filed to 1) */
-
+	int i = 0;
+    int npage_unavailable = PPN(PADDR(freemem));
+    for(i = 0; i < npage_unavailable; i++){
+        pages[i].pp_ref = 1;
+    }
 
 	/* Step 4: Mark the other memory as free. */
+	for(i = npage_unavailable; i < npage; i++){
+        pages[i].pp_ref = 0;
+        LIST_INSERT_HEAD(&page_free_list, pages + i, pp_link);
+    }
 }
 
 /* Exercise 2.4 */
@@ -208,11 +220,15 @@ int page_alloc(struct Page **pp)
 	struct Page *ppage_temp;
 
 	/* Step 1: Get a page from free memory. If fail, return the error code.*/
-
+	if (LIST_EMPTY(&page_free_list)) return -E_NO_MEM;
+    ppage_temp = LIST_FIRST(&page_free_list);
+    LIST_REMOVE(ppage_temp, pp_link);
 
 	/* Step 2: Initialize this page.
 	 * Hint: use `bzero`. */
-
+	bzero((void*)page2kva(ppage_temp), BY2PG);
+    *pp = ppage_temp;
+    return 0;
 
 }
 
@@ -227,7 +243,10 @@ void page_free(struct Page *pp)
 
 
 	/* Step 2: If the `pp_ref` reaches 0, mark this page as free and return. */
-
+	if (pp->pp_ref == 0) {
+        LIST_INSERT_HEAD((&page_free_list), pp, pp_link);
+        return;
+    } else if (pp->pp_ref > 0) return;
 
 	/* If the value of `pp_ref` is less than 0, some error must occurr before,
 	 * so PANIC !!! */
