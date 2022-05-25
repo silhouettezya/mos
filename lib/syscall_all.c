@@ -119,7 +119,10 @@ int sys_set_pgfault_handler(int sysno, u_int envid, u_int func, u_int xstacktop)
 	// Your code here.
 	struct Env *env;
 	int ret;
-
+	
+	if ((ret = envid2env(envid, &env, 0)) < 0) return ret;
+    env->env_pgfault_handler = func;
+    env->env_xstacktop = xstacktop;
 
 	return 0;
 	//	panic("sys_set_pgfault_handler not implemented");
@@ -277,6 +280,15 @@ int sys_env_alloc(void)
 	int r;
 	struct Env *e;
 
+	if ((r = env_alloc(&e, curenv->env_id)) < 0) {
+		return r;
+	}
+    bcopy((void *) KERNEL_SP - sizeof(struct Trapframe),
+          (void *) &(e->env_tf), sizeof(struct Trapframe));
+    e->env_status = ENV_NOT_RUNNABLE;
+    e->env_pri = curenv->env_pri;
+	e->env_tf.pc = e->env_tf.cp0_epc;
+    e->env_tf.regs[2] = 0; // $v0 <- return value
 
 	return e->env_id;
 	//	panic("sys_env_alloc not implemented");
@@ -301,6 +313,17 @@ int sys_set_env_status(int sysno, u_int envid, u_int status)
 	struct Env *env;
 	int ret;
 
+	if (status != ENV_RUNNABLE && status != ENV_NOT_RUNNABLE && status != ENV_FREE) {
+		return -E_INVAL;
+	}
+	ret = envid2env(envid, &env, 0);
+	if (ret) {
+		return ret;
+	}
+	if (status == ENV_RUNNABLE && env->env_status != ENV_RUNNABLE) {
+		LIST_INSERT_TAIL(&env_sched_list[0], env, env_sched_link);
+	}
+	env->env_status = status;
 	return 0;
 	//	panic("sys_env_set_status not implemented");
 }
