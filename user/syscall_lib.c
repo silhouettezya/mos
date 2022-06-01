@@ -95,5 +95,5 @@ syscall_write_dev(u_int va, u_int dev, u_int len) {
 
 int
 syscall_read_dev(u_int va, u_int dev, u_int len) {
-	return msyscall(SYS_write_dev, va, dev, len, 0, 0);
+	return msyscall(SYS_read_dev, va, dev, len, 0, 0);
 }
