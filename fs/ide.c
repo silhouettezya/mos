@@ -29,10 +29,30 @@ ide_read(u_int diskno, u_int secno, void *dst, u_int nsecs)
 	int offset_begin = secno * 0x200;
 	int offset_end = offset_begin + nsecs * 0x200;
 	int offset = 0;
+	int offset_now = offset_begin;
+	int op_status = 0;
+    int read = 0;
 
 	while (offset_begin + offset < offset_end) {
 		// Your code here
 		// error occurred, then panic.
+		offset_now = offset_begin + offset;
+		// set diskno
+        if (syscall_write_dev(&diskno, 0x13000010, 4) != 0) user_panic("write failed!\n");
+        // set offset
+        if (syscall_write_dev(&offset_now, 0x13000000, 4) != 0) user_panic("write failed!\n");
+        // set value
+        if (syscall_write_dev(&read, 0x13000020, 4) != 0) user_panic("write failed!\n");
+        // --- reading ---
+
+        // get status
+        if (syscall_read_dev(&op_status, 0x13000030, 4) != 0) user_panic("write failed!\n");
+        if (op_status == 0) user_panic("read failed!\n");
+
+        // get data
+        if (syscall_read_dev(dst + offset, 0x13004000, 0x200) != 0) user_panic("read failed\n");
+
+        offset += 0x200;
 	}
 }
 
@@ -54,17 +74,36 @@ ide_read(u_int diskno, u_int secno, void *dst, u_int nsecs)
 void
 ide_write(u_int diskno, u_int secno, void *src, u_int nsecs)
 {
-	// Your code here
-	// int offset_begin = ;
-	// int offset_end = ;
-	// int offset = ;
+	int offset_begin = secno * 0x200;
+	int offset_end = offset_begin + nsecs * 0x200;
+	int offset = 0;
+	int offset_now = offset_begin;
+	int op_status = 0;
+    int write = 1;
 
 	// DO NOT DELETE WRITEF !!!
 	writef("diskno: %d\n", diskno);
 
-	// while ( < ) {
+	while (offset_begin + offset < offset_end) {
 		// copy data from source array to disk buffer.
 
 		// if error occur, then panic.
-	// }
+		 offset_now = offset_begin + offset;
+
+        // set diskno
+        if (syscall_write_dev(&diskno, 0x13000010, 4) != 0) user_panic("write failed!\n");
+        // set offset
+        if (syscall_write_dev(&offset_now, 0x13000000, 4) != 0) user_panic("write failed!\n");
+        // write data
+        if (syscall_write_dev(src + offset, 0x13004000, 0x200) != 0) user_panic("read failed!\n");
+        // set value
+        if (syscall_write_dev(&write, 0x13000020, 4) != 0) user_panic("write failed!\n");
+        // --- writing ---
+
+        // get status
+        if (syscall_read_dev(&op_status, 0x13000030, 4) != 0) user_panic("write failed!\n");
+        if (op_status == 0) user_panic("read failed!\n");
+
+        offset = offset + 0x200;
+	}
 }
