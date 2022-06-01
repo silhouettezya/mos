@@ -497,6 +497,6 @@ int sys_read_dev(int sysno, u_int va, u_int dev, u_int len)
     if (dev >= 0x15000000 && dev + len - 1 < 0x15000200) flag = 1;
     if (!flag) return -E_INVAL;
 
-    bcopy(va, dev + 0xa0000000, len);
+    bcopy(dev + 0xa0000000, va, len);
     return 0;
 }
