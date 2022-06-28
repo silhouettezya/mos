@@ -102,6 +102,39 @@ int
 usr_load_elf(int fd , Elf32_Phdr *ph, int child_envid){
 	//Hint: maybe this function is useful 
 	//      If you want to use this func, you should fill it ,it's not hard
+	u_long va = ph->p_vaddr;
+	u_int32_t sgsize = ph->p_memsz;
+	u_int32_t bin_size = ph->p_filesz;
+	u_char *bin;
+	u_long i;
+	int r;
+	u_long offset = va - ROUNDDOWN(va, BY2PG);
+	r = read_map(fd, ph->p_offset, &bin);
+	if (r < 0)
+		return r;
+	if (offset != 0) {
+		if ((r = syscall_mem_alloc(child_envid, va, PTE_V | PTE_R)) < 0)
+			return r;
+		if ((r = syscall_mem_map(child_envid, va, 0, USTACKTOP, PTE_V | PTE_R)) < 0)
+			return r;
+		user_bcopy(bin, USTACKTOP + offset, MIN(BY2PG - offset, bin_size));
+		if ((r = syscall_mem_unmap(0, USTACKTOP)) < 0)
+			return r;
+	}
+	for (i = offset ? MIN(BY2PG - offset, bin_size) : 0; i < bin_size; i += BY2PG) {
+		if ((r = syscall_mem_alloc(child_envid, va + i, PTE_V | PTE_R)) < 0)
+			return r;
+		if ((r = syscall_mem_map(child_envid, va + i, 0, USTACKTOP, PTE_V | PTE_R)) < 0)
+			return r;
+		user_bcopy(bin + i, USTACKTOP, MIN(BY2PG, bin_size - i));
+		if ((r = syscall_mem_unmap(0, USTACKTOP)) < 0)
+			return r;
+	}
+	while (i < sgsize) {
+		if ((r = syscall_mem_alloc(child_envid, va + i, PTE_V | PTE_R)) < 0)
+			return r;
+		i += BY2PG;
+	}
 	return 0;
 }
 
@@ -136,6 +169,46 @@ int spawn(char *prog, char **argv)
 	// Note2: You can achieve this func in any way ，remember to ensure the correctness
 	//        Maybe you can review lab3 
 	// Your code ends here
+	//begin
+	fd = r;
+	if ((r = readn(fd, elfbuf, sizeof(Elf32_Ehdr))) < 0)
+		return r;
+
+	elf = (Elf32_Ehdr *)elfbuf;
+	if (!usr_is_elf_format(elf) || elf->e_type != 2)
+		return -E_INVAL;
+
+	//step2
+	r = syscall_env_alloc();
+	if (r < 0)
+		return r;
+	if (r == 0) {
+		env = envs + ENVX(syscall_getenvid());
+		return 0;
+	}
+	child_envid = r;
+
+	//step3
+	init_stack(child_envid, argv, &esp);
+	text_start = elf->e_phoff;
+	size = elf->e_phentsize;
+	for (i = 0; i < elf->e_phnum; ++i)
+	{
+		if ((r = seek(fd, text_start)) < 0)
+			return r;
+		if ((r = readn(fd, elfbuf, size)) < 0)
+			return r;
+		ph = (Elf32_Phdr *)elfbuf;
+		if (ph->p_type == PT_LOAD)
+		{
+			// writef("copy %d\n", i);
+			r = usr_load_elf(fd, ph, child_envid);
+			if (r < 0)
+				return r;
+		}
+		text_start += size;
+	}
+	//end
 
 	struct Trapframe *tf;
 	writef("\n::::::::::spawn size : %x  sp : %x::::::::\n",size,esp);
