@@ -18,16 +18,58 @@
 #define ENV_RUNNABLE		1
 #define ENV_NOT_RUNNABLE	2
 
+// Values for challenge
+#define THREAD_MAX	8
+//for chancel
+#define PTHREAD_CANCEL_ENABLE 		1
+#define PTHREAD_CANCEL_DISABLE	0
+#define PTHREAD_CANCEL_ASYCHRONOUS		0
+#define PTHREAD_CANCEL_DEFFERED		1
+
+#define THREAD_CANCELED_EXIT		99
+
+#define E_THREAD_JOIN_FAIL		16
+//for sem
+#define SEM_FREE	0
+#define SEM_VALID	1
+
+//challenge Tcb
+LIST_HEAD(Tcb_joined_list,Tcb);
+
+struct Tcb {
+	struct Env *tcb_env;
+	struct Trapframe tcb_tf;
+	LIST_ENTRY(Tcb) tcb_sched_link;
+	u_int thread_id;
+	u_int tcb_status;
+	u_int tcb_pri;
+
+	//for pthread_cancel
+	int tcb_cancelstate;
+	int tcb_canceltype;
+	u_int tcb_canceled;
+
+	//for pthread_join
+	LIST_ENTRY(Tcb) tcb_joined_link;
+	struct Tcb_joined_list tcb_joined_list;
+	void **tcb_join_retval;
+	u_int tcb_detach;
+
+	//for pthread_exit
+	void *tcb_exit_ptr;
+	int tcb_exit_value;
+};
+
 struct Env {
-	struct Trapframe env_tf;        // Saved registers
+	//struct Trapframe env_tf;        // Saved registers
 	LIST_ENTRY(Env) env_link;       // Free list
 	u_int env_id;                   // Unique environment identifier
 	u_int env_parent_id;            // env_id of this env's parent
-	u_int env_status;               // Status of the environment
+	//u_int env_status;               // Status of the environment
 	Pde  *env_pgdir;                // Kernel virtual address of page dir
 	u_int env_cr3;
-	LIST_ENTRY(Env) env_sched_link;
-        u_int env_pri;
+	//LIST_ENTRY(Env) env_sched_link;
+    //    u_int env_pri;
 	// Lab 4 IPC
 	u_int env_ipc_value;            // data value sent to us 
 	u_int env_ipc_from;             // envid of the sender  
@@ -42,7 +84,36 @@ struct Env {
 	// Lab 6 scheduler counts
 	u_int env_runs;			// number of times been env_run'ed
 	u_int env_nop;                  // align to avoid mul instruction
+
+	//for lab4 challenge
+	//thread
+	u_int env_thread_count;
+	struct Tcb env_threads[THREAD_MAX];
+	//ipc
+	u_int env_ipc_waiting_threadid;
 };
+
+//challenge Sem
+struct sem {
+	u_int sem_envid;
+	int sem_value;
+	int sem_status;
+	int sem_shared;
+	int sem_wait_count;
+	int sem_first;
+	int sem_last;
+	struct Tcb *sem_wait_list[8];
+};
+
+//challenge extern
+LIST_HEAD(Tcb_list, Tcb);
+extern struct Tcb *curtcb;
+extern struct Tcb_list tcb_sched_list[2];
+
+int thread_alloc(struct Env *e, struct Tcb **t);
+int threadid2tcb(u_int threadid, struct Tcb **ptcb);
+
+
 
 LIST_HEAD(Env_list, Env);
 extern struct Env *envs;		// All environments
@@ -57,7 +128,7 @@ void env_create(u_char *binary, int size);
 void env_destroy(struct Env *e);
 
 int envid2env(u_int envid, struct Env **penv, int checkperm);
-void env_run(struct Env *e);
+void env_run(struct Tcb *e);//challenge
 
 
 // for the grading script
@@ -82,3 +153,4 @@ void env_run(struct Env *e);
 }
 
 #endif // !_ENV_H_
+

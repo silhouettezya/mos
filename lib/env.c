@@ -13,12 +13,105 @@ struct Env *envs = NULL;        // All environments
 struct Env *curenv = NULL;            // the current env
 
 static struct Env_list env_free_list;    // Free list
-struct Env_list env_sched_list[2];      // Runnable list
+//struct Env_list env_sched_list[2];      // Runnable list
  
 extern Pde *boot_pgdir;
 extern char *KERNEL_SP;
 
 static u_int asid_bitmap[2] = {0}; // 64
+
+//challenge variable
+struct Tcb *curtcb = NULL;
+struct Tcb_list tcb_sched_list[2];    // Runnable list
+
+//challenge function
+u_int mktcbid(struct Tcb *t) {
+	struct Env *e = t->tcb_env;
+	u_int tcb_no = ((u_int)t - (u_int)(e->env_threads))/sizeof(struct Tcb);
+	return ((e->env_id << 3) | tcb_no);
+}
+
+int threadid2tcb(u_int threadid, struct Tcb **ptcb) {
+	struct Env *e;
+    struct Tcb *t;
+
+	if (threadid == 0) {
+		*ptcb = curtcb;
+		return 0;
+	}
+    e = &envs[ENVX(threadid >> 3)];
+	t = &e->env_threads[threadid & 0x7];
+	if (t->tcb_status == ENV_FREE || t->thread_id != threadid) {
+		*ptcb = 0;
+		return -E_BAD_ENV;
+	}
+	*ptcb = t;
+	return 0;
+}
+
+int thread_alloc(struct Env *e, struct Tcb **new) {
+    struct Tcb *t;
+	int thread_no = e->env_thread_count;
+	int i;
+
+    if (e->env_thread_count >= THREAD_MAX) {
+		return E_THREAD_MAX;
+    }
+
+	for (i = 0; e->env_threads[thread_no].tcb_status != ENV_FREE; i++) {
+        if (i > THREAD_MAX) {
+			return E_THREAD_MAX;
+        }
+		thread_no++;
+		thread_no = thread_no % THREAD_MAX;
+	}
+	e->env_thread_count++;
+
+	t = &e->env_threads[thread_no];
+    t->tcb_env = e;
+	t->thread_id = mktcbid(t);
+	t->tcb_status = ENV_RUNNABLE;
+	t->tcb_tf.cp0_status = 0x1000100c;
+	t->tcb_exit_ptr = (void *)0;
+	t->tcb_tf.regs[29] = USTACKTOP - 4*BY2PG*(t->thread_id & 0x7);
+	t->tcb_cancelstate = PTHREAD_CANCEL_ENABLE;
+	t->tcb_canceltype = PTHREAD_CANCEL_ASYCHRONOUS;
+	t->tcb_canceled = 0;
+	t->tcb_exit_value = 0;
+	t->tcb_exit_ptr = (void *)&t->tcb_exit_value;
+	t->tcb_detach = 0;
+	LIST_INIT(&t->tcb_joined_list);
+	*new = t;
+    printf("thread id is %x\n",t->thread_id);
+	return 0;
+}
+
+void thread_free(struct Tcb *t) 
+{
+	struct Env *e = t->tcb_env;
+    /* Hint: Note the environment's demise.*/
+	printf("[%08x] free tcb %08x at env %08x\n", curenv ? curenv->env_id : 0, t->thread_id, e->env_id);
+    if (t->tcb_status == ENV_RUNNABLE) {
+		LIST_REMOVE(t,tcb_sched_link);
+    }
+    t->tcb_status = ENV_FREE;
+	e->env_thread_count--;
+	if (e->env_thread_count == 0) {
+		env_free(e);
+	}
+}
+
+void thread_destroy(struct Tcb *t) {
+	thread_free(t);
+	if (curtcb == t) {
+		curtcb = NULL;
+		bcopy((void *)KERNEL_SP - sizeof(struct Trapframe),
+			(void *)TIMESTACK - sizeof(struct Trapframe),
+			sizeof(struct Trapframe));
+		printf("i am thread, i am killed ... \n");
+		sched_yield();
+	}
+}
 
 
 /* Overview:
@@ -99,8 +192,8 @@ int envid2env(u_int envid, struct Env **penv, int checkperm)
 
     e = &envs[ENVX(envid)];
 
-
-    if (e->env_status == ENV_FREE || e->env_id != envid) {
+    //challenge
+    if (e->env_id != envid) {
         *penv = 0;
         return -E_BAD_ENV;
     }
@@ -139,8 +232,8 @@ env_init(void)
     int i;
     /* Step 1: Initialize env_free_list. */
 	LIST_INIT(&env_free_list);
-    LIST_INIT(&env_sched_list[0]);
-    LIST_INIT(&env_sched_list[1]);
+    LIST_INIT(&tcb_sched_list[0]);
+    LIST_INIT(&tcb_sched_list[1]);
 
     /* Step 2: Traverse the elements of 'envs' array,
      *   set their status as free and insert them into the env_free_list.
@@ -148,7 +241,7 @@ env_init(void)
      * Make sure, after the insertion, the order of envs in the list
      *   should be the same as that in the envs array. */
 	for (i = NENV - 1; i >= 0; i--) {
-        envs[i].env_status = ENV_FREE;
+        //envs[i].env_status = ENV_FREE; challenge
         LIST_INSERT_HEAD(&env_free_list, &envs[i], env_link);
     }
 
@@ -230,10 +323,11 @@ env_setup_vm(struct Env *e)
  */
 /*** exercise 3.5 ***/
 int
-env_alloc(struct Env **new, u_int parent_id)
+env_alloc(struct Env **new, u_int parent_id)//challenge
 {
     int r;
     struct Env *e;
+    struct Tcb *t;
 
     /* Step 1: Get a new Env from env_free_list*/
 	if (LIST_EMPTY(&env_free_list))
@@ -252,12 +346,15 @@ env_alloc(struct Env **new, u_int parent_id)
 
     /* Step 3: Initialize every field of new Env with appropriate values.*/
 	e->env_id = mkenvid(e);
-    e->env_status = ENV_RUNNABLE;
+    //e->env_status = ENV_RUNNABLE;
     e->env_parent_id = parent_id;
+    if ((r = thread_alloc(e, &t)) < 0) {
+		return r;
+	}
 
     /* Step 4: Focus on initializing the sp register and cp0_status of env_tf field, located at this new Env. */
-    e->env_tf.cp0_status = 0x1000100c;
-	e->env_tf.regs[29] = USTACKTOP;
+    //e->env_tf.cp0_status = 0x1000100c;
+	//e->env_tf.regs[29] = USTACKTOP;
 
     /* Step 5: Remove the new Env from env_free_list. */
 	LIST_REMOVE(e, env_link);
@@ -365,7 +462,7 @@ load_icode(struct Env *e, u_char *binary, u_int size)
     if (r != 0) return;
 
     /* Step 4: Set CPU's PC register as appropriate value. */
-    e->env_tf.pc = entry_point;
+    e->env_threads[0].tcb_tf.pc = entry_point;//challenge
 }
 
 /* Overview:
@@ -386,11 +483,12 @@ env_create_priority(u_char *binary, int size, int priority)
     /* Step 1: Use env_alloc to alloc a new env. */
 	if ((r = env_alloc(&e, 0)) != 0) return;
     /* Step 2: assign priority to the new env. */
-	e->env_pri = priority;
+	//e->env_pri = priority;
+    e->env_threads[0].tcb_pri = priority;//challenge
     /* Step 3: Use load_icode() to load the named elf binary,
        and insert it into env_sched_list using LIST_INSERT_HEAD. */
 	load_icode(e, binary, size);
-    LIST_INSERT_HEAD(&env_sched_list[0], e, env_sched_link);
+    LIST_INSERT_HEAD(&tcb_sched_list[0], &e->env_threads[0], tcb_sched_link);//challenge
 }
 /* Overview:
  * Allocate a new env with default priority value.
@@ -444,9 +542,9 @@ env_free(struct Env *e)
     asid_free(e->env_id >> (1 + LOG2NENV));
     page_decref(pa2page(pa));
     /* Hint: return the environment to the free list. */
-    e->env_status = ENV_FREE;
+    //e->env_status = ENV_FREE;challenge
     LIST_INSERT_HEAD(&env_free_list, e, env_link);
-    LIST_REMOVE(e, env_sched_link);
+    //LIST_REMOVE(e, env_sched_link);
 }
 
 /* Overview:
@@ -486,22 +584,23 @@ extern void lcontext(u_int contxt);
  */
 /*** exercise 3.10 ***/
 void
-env_run(struct Env *e)
+env_run(struct Tcb *t)//challenge
 {
     /* Step 1: save register state of curenv. */
     /* Hint: if there is an environment running, 
      *   you should switch the context and save the registers. 
      *   You can imitate env_destroy() 's behaviors.*/
-	if (curenv != NULL) {
+	if (curtcb != NULL) {
         struct Trapframe *old;
         old = (struct Trapframe *) (TIMESTACK - sizeof(struct Trapframe));
-        bcopy(old, &(curenv->env_tf), sizeof(struct Trapframe));
-        curenv->env_tf.pc = curenv->env_tf.cp0_epc;
+        bcopy(old, &(curtcb->tcb_tf), sizeof(struct Trapframe));
+        curtcb->tcb_tf.pc = curtcb->tcb_tf.cp0_epc;
     }
 
     /* Step 2: Set 'curenv' to the new environment. */
-	curenv = e;
-    curenv->env_status = ENV_RUNNABLE;
+    curenv = t->tcb_env;
+	curtcb = t;
+    curtcb->tcb_status = ENV_RUNNABLE;
 
     /* Step 3: Use lcontext() to switch to its address space. */
 	lcontext(curenv->env_pgdir);
@@ -512,15 +611,15 @@ env_run(struct Env *e)
      * Hint: You should use GET_ENV_ASID there. Think why?
      *   (read <see mips run linux>, page 135-144)
      */
-	env_pop_tf(&(e->env_tf), GET_ENV_ASID(e->env_id));
+	env_pop_tf(&(t->tcb_tf), GET_ENV_ASID(curenv->env_id));
 }
 
-void env_check()
+/*void env_check()
 {
     struct Env *temp, *pe, *pe0, *pe1, *pe2;
     struct Env_list fl;
     int re = 0;
-    /* should be able to allocate three envs */
+    /* should be able to allocate three envs 
     pe0 = 0;
     pe1 = 0;
     pe2 = 0;
@@ -532,15 +631,15 @@ void env_check()
     assert(pe1 && pe1 != pe0);
     assert(pe2 && pe2 != pe1 && pe2 != pe0);
 
-    /* temporarily steal the rest of the free envs */
+    /* temporarily steal the rest of the free envs 
     fl = env_free_list;
-    /* now this env_free list must be empty! */
+    /* now this env_free list must be empty! 
     LIST_INIT(&env_free_list);
 
-    /* should be no free memory */
+    /* should be no free memory 
     assert(env_alloc(&pe, 0) == -E_NO_FREE_ENV);
 
-    /* recover env_free_list */
+    /* recover env_free_list 
     env_free_list = fl;
 
     printf("pe0->env_id %d\n",pe0->env_id);
@@ -552,7 +651,7 @@ void env_check()
     assert(pe2->env_id == 5122);
     printf("env_init() work well!\n");
 
-    /* check envid2env work well */
+    /* check envid2env work well 
     pe2->env_status = ENV_FREE;
     re = envid2env(pe2->env_id, &pe, 0);
 
@@ -570,7 +669,7 @@ void env_check()
     curenv = temp;
     printf("envid2env() work well!\n");
 
-    /* check env_setup_vm() work well */
+    /* check env_setup_vm() work well 
     printf("pe1->env_pgdir %x\n",pe1->env_pgdir);
     printf("pe1->env_cr3 %x\n",pe1->env_cr3);
 
@@ -581,7 +680,7 @@ void env_check()
     assert(pe2->env_tf.cp0_status == 0x10001004);
     printf("pe2`s sp register %x\n",pe2->env_tf.regs[29]);
 
-    /* free all env allocated in this function */
+    /* free all env allocated in this function 
     LIST_INSERT_HEAD(env_sched_list, pe0, env_sched_link);
     LIST_INSERT_HEAD(env_sched_list, pe1, env_sched_link);
     LIST_INSERT_HEAD(env_sched_list, pe2, env_sched_link);
@@ -594,7 +693,7 @@ void env_check()
 }
 
 void load_icode_check() {
-    /* check_icode.c from init/init.c */
+    /* check_icode.c from init/init.c 
     extern u_char binary_user_check_icode_start[];
     extern u_int binary_user_check_icode_size;
     env_create(binary_user_check_icode_start, binary_user_check_icode_size);
@@ -602,7 +701,7 @@ void load_icode_check() {
     Pte* pte;
     u_int paddr;
     assert(envid2env(1024, &e, 0) == 0);
-    /* text & data: 0x00401030 - 0x00409adc left closed and right open interval */
+    /* text & data: 0x00401030 - 0x00409adc left closed and right open interval 
     assert(pgdir_walk(e->env_pgdir, 0x00401000, 0, &pte) == 0);
     assert(*((int *)KADDR(PTE_ADDR(*pte)) + 0xc) == 0x8fa40000);
     assert(*((int *)KADDR(PTE_ADDR(*pte)) + 1023) == 0x26300001);
@@ -631,7 +730,7 @@ void load_icode_check() {
     assert(*((int *)KADDR(PTE_ADDR(*pte))) == 0x00000000);
     assert(*((int *)KADDR(PTE_ADDR(*pte)) + 0x2aa) == 0x004099fc);
     printf("text & data segment load right!\n");
-    /* bss        : 0x00409adc - 0x0040aab4 left closed and right open interval */
+    /* bss        : 0x00409adc - 0x0040aab4 left closed and right open interval 
     assert(*((int *)KADDR(PTE_ADDR(*pte)) + 0x2b7) == 0x00000000);
     assert(*((int *)KADDR(PTE_ADDR(*pte)) + 1023) == 0x00000000);
     assert(pgdir_walk(e->env_pgdir, 0x0040a000, 0, &pte) == 0);
@@ -644,5 +743,6 @@ void load_icode_check() {
 
     env_free(e);
     printf("load_icode_check() succeeded!\n");
-}
+}*/
+
 

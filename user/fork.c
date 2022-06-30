@@ -158,6 +158,7 @@ fork(void)
 	u_int newenvid;
 	extern struct Env *envs;
 	extern struct Env *env;
+	extern struct Tcb *tcb;
 	u_int i;
 
 
@@ -167,6 +168,7 @@ fork(void)
 	newenvid = syscall_env_alloc();
 	if (newenvid == 0) {
 		env = envs + ENVX(syscall_getenvid());
+		tcb = &env->env_threads[0];
 		return 0;
 	}
 
@@ -189,3 +191,4 @@ sfork(void)
 	user_panic("sfork not implemented");
 	return -E_INVAL;
 }
+

@@ -6,11 +6,16 @@ void
 exit(void)
 {
 	//close_all();
-	syscall_env_destroy(0);
+	//syscall_env_destroy(0);
+	int threadid = syscall_getthreadid();
+	struct Tcb *t = &env->env_threads[threadid & 0x7];
+	t->tcb_exit_value = 0;
+	syscall_thread_destroy(0);
 }
 
 
 struct Env *env;
+struct Tcb *tcb; 
 
 void
 libmain(int argc, char **argv)
@@ -28,3 +33,4 @@ libmain(int argc, char **argv)
 	exit();
 	//syscall_env_destroy(0);
 }
+

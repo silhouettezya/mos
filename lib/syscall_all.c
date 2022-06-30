@@ -4,9 +4,176 @@
 #include <printf.h>
 #include <pmap.h>
 #include <sched.h>
+#include <error.h>
 
 extern char *KERNEL_SP;
 extern struct Env *curenv;
+//challenge
+extern struct Tcb *curtcb;
+
+u_int sys_getthreadid(void)
+{
+	return curtcb->thread_id;
+}
+
+int sys_thread_alloc(void)
+{
+	int r;
+	struct Tcb *t;
+	
+	if ((r = thread_alloc(curenv, &t)) < 0) {
+		return r;
+	}
+
+	t->tcb_pri = curenv->env_threads[0].tcb_pri;
+	t->tcb_status = ENV_NOT_RUNNABLE;
+	t->tcb_tf.regs[2] = 0;
+	t->tcb_tf.pc = t->tcb_tf.cp0_epc;
+	return t->thread_id;
+	
+}
+
+int sys_thread_destroy(int sysno, u_int threadid)
+{
+	int r;
+	struct Tcb *t;
+
+	if ((r = threadid2tcb(threadid,&t)) < 0) {
+		return r;
+	}
+	
+	//if joined
+	struct Tcb *tmp;
+	while (!LIST_EMPTY(&t->tcb_joined_list)) {
+		tmp = LIST_FIRST(&t->tcb_joined_list);
+		LIST_REMOVE(tmp,tcb_joined_link);
+		*(tmp->tcb_join_retval) = t->tcb_exit_ptr;
+		tmp->tcb_status = ENV_RUNNABLE;
+		//printf("wake up tcb %08x\n", tmp->thread_id);
+	}
+	printf("[%08x] destroying tcb %08x\n", curenv->env_id, t->thread_id);
+	thread_destroy(t);
+	return 0;
+}
+
+int sys_set_thread_status(int sysno, u_int threadid, u_int status)
+{
+	int ret;
+	struct Tcb *tcb;
+
+	if ((status != ENV_RUNNABLE)&&(status != ENV_NOT_RUNNABLE)&&(status != ENV_FREE)) {
+		return -E_INVAL;
+	}
+	ret = threadid2tcb(threadid, &tcb);
+	if (ret < 0) {
+		return ret;
+	}
+	if ((status == ENV_RUNNABLE) && (tcb->tcb_status != ENV_RUNNABLE)) {
+		LIST_INSERT_HEAD(tcb_sched_list, tcb, tcb_sched_link);	
+	}
+	tcb->tcb_status = status;
+	return 0;
+}
+
+int sys_thread_join(int sysno, u_int threadid, void **retval)
+{
+	int r;
+	struct Tcb *t;
+
+	//printf("here id is 0x%x\n",threadid);
+	r = threadid2tcb(threadid, &t);
+	//printf("find id is 0x%x\n",t->thread_id);
+	if (r < 0)
+		return r;
+	if (t->tcb_detach) {
+		return -E_THREAD_JOIN_FAIL;
+	}
+	//if isend
+	if (t->tcb_status == ENV_FREE) {
+		if (retval != NULL) {
+			*retval = t->tcb_exit_ptr;
+		}
+		return 0;
+	}
+	//printf(""); //for test
+	LIST_INSERT_HEAD(&t->tcb_joined_list, curtcb, tcb_joined_link);
+	curtcb->tcb_join_retval = retval;
+	curtcb->tcb_status = ENV_NOT_RUNNABLE;
+	
+	sys_yield();
+	return 0;
+}
+
+int sys_sem_destroy(int sysno, sem_t *sem)
+{
+	sem->sem_status = SEM_FREE;
+	return 0;
+}
+
+int sys_sem_wait(int sysno, sem_t *sem)
+{
+	if (sem->sem_status == SEM_FREE) {
+		return -E_SEM_ERROR;
+	}
+	int i;
+	if (sem->sem_value > 0) {
+		sem->sem_value--;
+	} else {
+		sem->sem_wait_list[sem->sem_last] = curtcb;
+		sem->sem_last = (sem->sem_last + 1) % THREAD_MAX;
+		sem->sem_wait_count++;
+		curtcb->tcb_status = ENV_NOT_RUNNABLE;
+		
+		sys_yield();
+	}
+	return 0;
+}
+
+int sys_sem_trywait(int sysno, sem_t *sem)
+{
+	if (sem->sem_status == SEM_FREE) {
+		return -E_SEM_ERROR;
+	}
+	if (sem->sem_value > 0) {
+		sem->sem_value--;
+		return 0;
+	}
+	return -E_SEM_EAGAIN;
+}
+
+int sys_sem_post(int sysno, sem_t *sem)
+{
+	struct Tcb *t;
+
+	if (sem->sem_status == SEM_FREE) {
+		return -E_SEM_ERROR;
+	}
+	if (sem->sem_value > 0) {
+		sem->sem_value++;
+	} else {
+		if (sem->sem_wait_count == 0) {
+			sem->sem_value++;
+		} else {
+			t = sem->sem_wait_list[sem->sem_first];
+			sem->sem_wait_list[sem->sem_first] = 0;
+			sem->sem_first = (sem->sem_first + 1) % THREAD_MAX;
+			t->tcb_status = ENV_RUNNABLE;
+			sem->sem_wait_count--;
+		}
+	}
+	return 0;
+}
+
+int sys_sem_getvalue(int sysno, sem_t *sem, int *valp)
+{
+	if (sem->sem_status == SEM_FREE) {
+		return -E_SEM_ERROR;
+	}
+	if (valp != NULL) {
+		*valp = sem->sem_value;
+	}
+	return 0;
+}
 
 /* Overview:
  * 	This function is used to print a character on screen.
@@ -274,7 +441,7 @@ int sys_mem_unmap(int sysno, u_int envid, u_int va)
  * 	Returns envid of new environment, or < 0 on error.
  */
 /*** exercise 4.8 ***/
-int sys_env_alloc(void)
+int sys_env_alloc(void)//challenge
 {
 	// Your code here.
 	int r;
@@ -284,11 +451,11 @@ int sys_env_alloc(void)
 		return r;
 	}
     bcopy((void *) KERNEL_SP - sizeof(struct Trapframe),
-          (void *) &(e->env_tf), sizeof(struct Trapframe));
-    e->env_status = ENV_NOT_RUNNABLE;
-    e->env_pri = curenv->env_pri;
-	e->env_tf.pc = e->env_tf.cp0_epc;
-    e->env_tf.regs[2] = 0; // $v0 <- return value
+          (void *) &(e->env_threads[0].tcb_tf), sizeof(struct Trapframe));
+    e->env_threads[0].tcb_status = ENV_NOT_RUNNABLE;
+    e->env_threads[0].tcb_pri = curenv->env_threads[0].tcb_pri;
+	e->env_threads[0].tcb_tf.pc = e->env_threads[0].tcb_tf.cp0_epc;
+    e->env_threads[0].tcb_tf.regs[2] = 0; // $v0 <- return value
 
 	return e->env_id;
 	//	panic("sys_env_alloc not implemented");
@@ -307,23 +474,25 @@ int sys_env_alloc(void)
  * 	The status of environment will be set to `status` on success.
  */
 /*** exercise 4.14 ***/
-int sys_set_env_status(int sysno, u_int envid, u_int status)
+int sys_set_env_status(int sysno, u_int envid, u_int status)//challenge
 {
 	// Your code here.
 	struct Env *env;
 	int ret;
+	struct Tcb *tcb;
 
 	if (status != ENV_RUNNABLE && status != ENV_NOT_RUNNABLE && status != ENV_FREE) {
 		return -E_INVAL;
 	}
 	ret = envid2env(envid, &env, 0);
+	tcb = &env->env_threads[0];
 	if (ret) {
 		return ret;
 	}
-	if (status == ENV_RUNNABLE && env->env_status != ENV_RUNNABLE) {
-		LIST_INSERT_HEAD(&env_sched_list[0], env, env_sched_link);
+	if (status == ENV_RUNNABLE && tcb->tcb_status != ENV_RUNNABLE) {
+		LIST_INSERT_HEAD(&tcb_sched_list[0], tcb, tcb_sched_link);
 	}
-	env->env_status = status;
+	tcb->tcb_status = status;
 	return 0;
 	//	panic("sys_env_set_status not implemented");
 }
@@ -375,12 +544,13 @@ void sys_panic(int sysno, char *msg)
  * ENV_NOT_RUNNABLE, giving up cpu.
  */
 /*** exercise 4.7 ***/
-void sys_ipc_recv(int sysno, u_int dstva)
+void sys_ipc_recv(int sysno, u_int dstva)//challenge
 {
 	if (dstva >= UTOP) return;
     curenv->env_ipc_recving = 1;
     curenv->env_ipc_dstva = dstva;
-    curenv->env_status = ENV_NOT_RUNNABLE;
+	curenv->env_ipc_waiting_threadid = curtcb->thread_id;
+    curtcb->tcb_status = ENV_NOT_RUNNABLE;
     sys_yield();
 }
 
@@ -403,7 +573,7 @@ void sys_ipc_recv(int sysno, u_int dstva)
  */
 /*** exercise 4.7 ***/
 int sys_ipc_can_send(int sysno, u_int envid, u_int value, u_int srcva,
-					 u_int perm)
+					 u_int perm)//challenge
 {
 
 	int r;
@@ -417,7 +587,8 @@ int sys_ipc_can_send(int sysno, u_int envid, u_int value, u_int srcva,
     e->env_ipc_from = curenv->env_id;
     e->env_ipc_perm = perm;
     e->env_ipc_recving = 0;
-    e->env_status = ENV_RUNNABLE;
+	int threadid = e->env_ipc_waiting_threadid;
+    e->env_threads[threadid & 0x7].tcb_status = ENV_RUNNABLE;
 
     if (srcva != 0) {
         Pte *pte;
@@ -428,3 +599,4 @@ int sys_ipc_can_send(int sysno, u_int envid, u_int value, u_int srcva,
 
 	return 0;
 }
+
