@@ -49,7 +49,6 @@ int sys_thread_destroy(int sysno, u_int threadid)
 		LIST_REMOVE(tmp,tcb_joined_link);
 		*(tmp->tcb_join_retval) = t->tcb_exit_ptr;
 		tmp->tcb_status = ENV_RUNNABLE;
-		//printf("wake up tcb %08x\n", tmp->thread_id);
 	}
 	printf("[%08x] destroying tcb %08x\n", curenv->env_id, t->thread_id);
 	thread_destroy(t);
@@ -80,9 +79,7 @@ int sys_thread_join(int sysno, u_int threadid, void **retval)
 	int r;
 	struct Tcb *t;
 
-	//printf("here id is 0x%x\n",threadid);
 	r = threadid2tcb(threadid, &t);
-	//printf("find id is 0x%x\n",t->thread_id);
 	if (r < 0)
 		return r;
 	if (t->tcb_detach) {
@@ -95,18 +92,11 @@ int sys_thread_join(int sysno, u_int threadid, void **retval)
 		}
 		return 0;
 	}
-	//printf(""); //for test
 	LIST_INSERT_HEAD(&t->tcb_joined_list, curtcb, tcb_joined_link);
 	curtcb->tcb_join_retval = retval;
 	curtcb->tcb_status = ENV_NOT_RUNNABLE;
 	
 	sys_yield();
-	return 0;
-}
-
-int sys_sem_destroy(int sysno, sem_t *sem)
-{
-	sem->sem_status = SEM_FREE;
 	return 0;
 }
 
@@ -164,13 +154,13 @@ int sys_sem_post(int sysno, sem_t *sem)
 	return 0;
 }
 
-int sys_sem_getvalue(int sysno, sem_t *sem, int *valp)
+int sys_sem_getvalue(int sysno, sem_t *sem, int *sval)
 {
 	if (sem->sem_status == SEM_FREE) {
 		return -E_SEM_ERROR;
 	}
-	if (valp != NULL) {
-		*valp = sem->sem_value;
+	if (sval != NULL) {
+		*sval = sem->sem_value;
 	}
 	return 0;
 }

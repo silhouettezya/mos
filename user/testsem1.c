@@ -31,7 +31,7 @@ void umain() {
 	pthread_t thread3;
 	arg1[1] = 1;
 	pthread_create(&thread1, NULL, B, (void *)arg1);
-	arg2[1] = 0;
+	arg2[1] = 3;
 	pthread_create(&thread2, NULL, B, (void *)arg2);
 	arg3[1] = 2;
 	pthread_create(&thread3, NULL, B, (void *)arg3);

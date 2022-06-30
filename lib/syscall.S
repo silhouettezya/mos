@@ -80,7 +80,6 @@ sys_call_table:                         // Syscall Table
     .word sys_thread_destroy
     .word sys_set_thread_status
     .word sys_thread_join
-    .word sys_sem_destroy
     .word sys_sem_wait
     .word sys_sem_trywait
     .word sys_sem_post

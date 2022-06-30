@@ -20,7 +20,8 @@ int sem_init(sem_t *sem,int shared,unsigned int value) {
 }
 
 int sem_destroy(sem_t *sem) {
-	return syscall_sem_destroy(sem);	
+	sem->sem_value = SEM_FREE;
+	return 0;	
 }
 
 int sem_wait(sem_t *sem) {
@@ -35,6 +36,6 @@ int sem_post(sem_t *sem) {
 	return syscall_sem_post(sem);
 }
 
-int sem_getvalue(sem_t *sem,int *valp) {
-	return syscall_sem_getvalue(sem,valp);
+int sem_getvalue(sem_t *sem,int *sval) {
+	return syscall_sem_getvalue(sem,sval);
 }
