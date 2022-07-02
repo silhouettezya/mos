@@ -1,7 +1,7 @@
 #include "lib.h"
 
 int count = 0;//reader num
-int full = 15;//yvliang
+int full = 50;//yvliang
 sem_t sem_mutex;//count huchi
 sem_t sem_rw;//duxiehuchi
 sem_t *mutex = &sem_mutex;
@@ -61,7 +61,7 @@ void umain() {
 	pthread_t thread3;
 	pthread_t thread4;
 	pthread_create(&thread1, NULL, B, (void *)&id1);
-	//pthread_create(&thread2, NULL, Q, (void *)&id2);
+	pthread_create(&thread2, NULL, Q, (void *)&id2);
 	pthread_create(&thread3, NULL, B, (void *)&id3);
 	pthread_create(&thread4, NULL, Q, (void *)&id4);
 }

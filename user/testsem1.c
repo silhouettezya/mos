@@ -1,6 +1,6 @@
 #include "lib.h"
 
-int full = 15;//yvliang
+int full = 50;//yvliang
 sem_t sem_rw;//duxiehuchi
 sem_t *rw = &sem_rw;
 

@@ -47,7 +47,9 @@ int sys_thread_destroy(int sysno, u_int threadid)
 	while (!LIST_EMPTY(&t->tcb_joined_list)) {
 		tmp = LIST_FIRST(&t->tcb_joined_list);
 		LIST_REMOVE(tmp,tcb_joined_link);
-		*(tmp->tcb_join_retval) = t->tcb_exit_ptr;
+		if (tmp->tcb_join_retval != NULL) {
+			*(tmp->tcb_join_retval) = t->tcb_exit_ptr;
+		}
 		tmp->tcb_status = ENV_RUNNABLE;
 	}
 	printf("[%08x] destroying tcb %08x\n", curenv->env_id, t->thread_id);
@@ -68,9 +70,12 @@ int sys_set_thread_status(int sysno, u_int threadid, u_int status)
 		return ret;
 	}
 	if ((status == ENV_RUNNABLE) && (tcb->tcb_status != ENV_RUNNABLE)) {
-		LIST_INSERT_HEAD(tcb_sched_list, tcb, tcb_sched_link);	
+		LIST_INSERT_HEAD(tcb_sched_list, tcb, tcb_sched_link);
+		tcb->tcb_status = status;
+		sys_yield();
+	} else {
+		tcb->tcb_status = status;
 	}
-	tcb->tcb_status = status;
 	return 0;
 }
 
