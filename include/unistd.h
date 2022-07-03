@@ -30,4 +30,5 @@
 #define SYS_sem_trywait		((__SYSCALL_BASE ) + (21 ))
 #define SYS_sem_post		((__SYSCALL_BASE ) + (22 ))
 #define SYS_sem_getvalue    ((__SYSCALL_BASE ) + (23 ))
+#define SYS_printf			((__SYSCALL_BASE ) + (24 ))
 #endif

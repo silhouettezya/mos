@@ -20,6 +20,7 @@ USERLIB := printf.o \
 CFLAGS += -nostdlib -static
 
 all: tltest.x tltest.b \
+	testall.x testall.b \
 	testcancel.x testcancel.b \
 	testsem1.x testsem1.b \
 	testjoin1.x testjoin1.b \

@@ -25,6 +25,8 @@ int syscall_sem_wait(sem_t *sem);
 int syscall_sem_trywait(sem_t *sem);
 int syscall_sem_post(sem_t *sem);
 int syscall_sem_getvalue(sem_t *sem,int *sval);
+int syscall_printf(char *fmt, va_list *ap_ptr);
+void printf(char *fmt, ...);
 
 // pthread.c
 int pthread_create(pthread_t * thread, const pthread_attr_t * attr, void * (*start_routine)(void *), void * arg);

@@ -11,6 +11,13 @@ extern struct Env *curenv;
 //challenge
 extern struct Tcb *curtcb;
 
+extern void lp_Print(void (*output)(void *, char *, int), void *arg, char *fmt, va_list ap);
+extern void myoutput(void *arg, char *s, int l);
+void sys_printf(int sysno, char *fmt, va_list* ap_ptr)
+{
+	lp_Print(myoutput, 0, fmt, *ap_ptr);
+}
+
 u_int sys_getthreadid(void)
 {
 	return curtcb->thread_id;

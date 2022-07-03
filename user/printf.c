@@ -3,7 +3,13 @@
 #include "lib.h"
 
 
-
+void printf(char *fmt, ...)
+{
+	va_list ap;
+	va_start(ap, fmt);
+	syscall_printf(fmt, &ap);
+	va_end(ap);
+}
 
 void halt(void);
 

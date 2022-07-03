@@ -134,3 +134,7 @@ int syscall_sem_getvalue(sem_t *sem,int *sval)
 	return msyscall(SYS_sem_getvalue,sem,sval,0,0,0);
 }
 
+int syscall_printf(char *fmt, va_list *ap_ptr)
+{
+	return msyscall(SYS_printf,fmt,ap_ptr,0,0,0);
+}

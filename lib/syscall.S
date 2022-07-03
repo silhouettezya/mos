@@ -84,3 +84,4 @@ sys_call_table:                         // Syscall Table
     .word sys_sem_trywait
     .word sys_sem_post
     .word sys_sem_getvalue
+	.word sys_printf
